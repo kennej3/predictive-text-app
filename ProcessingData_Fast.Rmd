@@ -1,0 +1,162 @@
+---
+title: Text Mining Data Processing
+author: "James Kennedy"
+output:
+  html_document:
+    toc: yes
+  fig_caption: yes
+  pdf_document:
+    fig_height: 4
+    fig_width: 5.75
+    toc: yes
+---
+##Synopsis
+
+This document processes the n-grams described in/produced by the ProcessingData_Prep.Rmd file. 
+
+----
+
+##Data Processing
+The first step in the analysis is to load the R libraries.
+```{r libraries, message=FALSE, warning=FALSE}
+library(tm)
+library(NLP)
+library(RWeka)
+library(stringi)
+library(SnowballC)
+library(slam)
+library(ggplot2)
+setwd('~/Data/UseData/')
+```
+
+###Loading the Data
+The n-grams are loaded into the workspace.
+
+```{r load_data}
+setwd('~/Data/UseData/')
+load('N1Data.RData')
+load('N2Data.RData')
+load('N3Data.RData')
+load('N4Data.RData')
+
+```
+
+
+```{r sample}
+set.seed(54321)
+```
+
+--- 
+
+## Sorting and filtering the N-grams
+Each n-gram is sorted and entries with a frequency of 5 or less are removed.  This can reduce the accuracy of the predictive text application, but will drastically reduce the size of the n-grams making the application run faster/smoother.
+
+```{r Sort}
+sort.gram.N1 <- sort(row_sums(gram.N1),decreasing=TRUE)
+sort.gram.N1 <- sort.gram.N1[which(sort.gram.N1>5)]
+sort.gram.N1 <- sort.gram.N1[grep('[A-Z]',names(sort.gram.N1),ignore.case = TRUE)]
+N1 <- names(sort.gram.N1)
+
+sort.gram.N2 <- sort(row_sums(gram.N2),decreasing=TRUE)
+sort.gram.N2 <- sort.gram.N2[which(sort.gram.N2>5)]
+sort.gram.N2 <- sort.gram.N2[grep('[A-Z]',names(sort.gram.N2),ignore.case = TRUE)]
+N2 <- names(sort.gram.N2)
+
+sort.gram.N3 <- sort(row_sums(gram.N3),decreasing=TRUE)
+sort.gram.N3 <- sort.gram.N3[which(sort.gram.N3>5)]
+sort.gram.N3 <- sort.gram.N3[grep('[A-Z]',names(sort.gram.N3),ignore.case = TRUE)]
+N3 <- names(sort.gram.N3)
+
+sort.gram.N4 <- sort(row_sums(gram.N4),decreasing=TRUE)
+sort.gram.N4 <- sort.gram.N4[which(sort.gram.N4>5)]
+sort.gram.N4 <- sort.gram.N4[grep('[A-Z]',names(sort.gram.N4),ignore.case = TRUE)]
+N4 <- names(sort.gram.N4)
+```
+
+### Further filitering of the N-grams
+
+To further filter and reduce the size of the n-grams, only the most frequent phrase that is repeated within a given n-gram is kept. For example, if the trigram has the following phrases and frequencies ("I love you",10), ("I love me",3), ("I love them",3), and ("I love my", 2) it will keep only "I love you".  The lower-level n-grams are used to search the higher-level n-grams.
+
+```{r removeDuplicates}
+for(i in 1:length(N3)){
+        print(length(N3))
+        print(i)
+        index <- grep(paste('^',N3[i],sep=''),N4)
+        N4 <- setdiff(N4,N4[index[2:length(index)]])
+}
+for(i in 1:length(N2)){
+        print(length(N2))
+        print(i)
+        index <- grep(paste('^',N2[i],sep=''),N3)
+        N3 <- setdiff(N3,N3[index[2:length(index)]])
+}
+for(i in 1:length(N1)){
+        print(length(N1))
+        print(i)
+        index <- grep(paste('^',N1[i],sep=''),N2)
+        N2 <- setdiff(N2,N2[index[2:length(index)]])
+}
+N1 <- N1[1]
+```
+
+Save the results.
+
+```{r saveoutputs}
+save(N1,N2,N3,N4, file='~/Data/UseData/TextMiningData.RData')
+```
+
+And plot!
+```{r summary_plots1}
+df.N1 <- data.frame(words=names(sort.gram.N1),number=sort.gram.N1)
+df.N1 <- df.N1[1:50,]
+df.N1$words <- factor(df.N1$words,unique(df.N1$words))
+g <- ggplot(df.N1, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 1. The 50 Largest Unigrams.")
+print(g)
+```
+
+```{r summary_plots2,echo=FALSE}
+df.N2 <- data.frame(words=names(sort.gram.N2),number=sort.gram.N2)
+df.N2 <- df.N2[1:50,]
+df.N2$words <- factor(df.N2$words,unique(df.N2$words))
+g <- ggplot(df.N2, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 2. The 50 Largest Bigrams.")
+print(g)
+```
+
+```{r summary_plots3,echo=FALSE}
+df.N3 <- data.frame(words=names(sort.gram.N3),number=sort.gram.N3)
+df.N3 <- df.N3[1:50,]
+df.N3$words <- factor(df.N3$words,unique(df.N3$words))
+g <- ggplot(df.N3, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 3. The 50 Largest Trigrams.")
+print(g)
+```
+
+```{r summary_plots4}
+df.N4 <- data.frame(words=names(sort.gram.N4),number=sort.gram.N4)
+df.N4 <- df.N4[1:50,]
+df.N4$words <- factor(df.N4$words,unique(df.N4$words))
+g <- ggplot(df.N4, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 4. The 50 Largest Quadgrams.")
+print(g)
+```
+
+
+Unsurprisingly, articles like 'the' and 'and', as well as prepositions like 'of' are common in the N-grams, as they are in everyday speech. The next stage of the project will be to create a model based on these N-grams. The unused portion of the data will be used for cross validation and testing.

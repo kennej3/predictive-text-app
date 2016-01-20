@@ -1,0 +1,216 @@
+---
+title: Text Mining Milestone Report
+author: "James Kennedy"
+output:
+  html_document:
+    toc: yes
+  fig_caption: yes
+  pdf_document:
+    fig_height: 4
+    fig_width: 5.75
+    toc: yes
+---
+##Synopsis
+
+This document presents the mid-term status of a project to build a predictive text model in R. The data used in the analysis is presented along with the data filtering and tokenization steps and some exploratory analyses.  
+
+This work uses a number of natural language processing (NLP) libraries in R and acknowledges the tm library documentation [[1](https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf),[2](http://www.jstatsoft.org/article/view/v025i05)] and the [CRAN Task View: Natural Language Processing page](http://cran.r-project.org/web/views/NaturalLanguageProcessing.html) as the main sources of reference.
+
+----
+
+##Data Processing
+
+The data processing consists of loading in the data sets, summarizing the data, and creating and filtering the 'corpus' -- an R object used by the text mining (tm) library which handles the collection of text documents and meta-data.
+
+The first step in the analysis is to load the R libraries.
+```{r libraries, message=FALSE, warning=FALSE}
+library(tm)
+library(NLP)
+library(RWeka)
+library(stringi)
+library(SnowballC)
+library(slam)
+library(ggplot2)
+setwd('~/Data/UseData/')
+```
+
+###Loading the Data
+The data is from HC Corpora [www.corpora.heliohost.org](http://www.corpora.heliohost.org), which creates their corpora from publicly available sources via a web crawler. This analysis uses the US english corpus, saved to the ~/Data directory.
+
+```{r load_data}
+setwd('~/Data/final/en_US/')
+twitter <- readLines('en_US.twitter.txt',skipNul = TRUE)
+news <- readLines('en_US.news.txt', skipNul=TRUE)
+blogs <- readLines('en_US.blogs.txt', skipNul=TRUE)
+```
+
+###Data Summary
+
+The data features are explored for each type individually (twitter, blogs, and news) and combined.
+
+```{r summary}
+twitter.data <- stri_stats_general(twitter)
+twitter.data2 <- stri_stats_latex(twitter)
+news.data <- stri_stats_general(news)
+news.data2 <- stri_stats_latex(news)
+blogs.data <- stri_stats_general(blogs)
+blogs.data2 <- stri_stats_latex(blogs)
+total.chars <- twitter.data['Chars']+news.data['Chars']+blogs.data['Chars']
+total.words <- twitter.data2['Words']+news.data2['Words']+blogs.data2['Words']
+total.lines <- twitter.data['Lines']+news.data['Lines']+blogs.data['Lines']
+```
+
+The twitter data set has a total of `r format(twitter.data['Chars'],big.mark=" ")` characters, `r format(twitter.data2['Words'],big.mark=" ")` words, and `r format(twitter.data['Lines'],big.mark=" ")` lines. The news data set has a total of `r format(news.data['Chars'],big.mark=" ")` characters, `r format(news.data2['Words'],big.mark=" ")` words, and `r format(news.data['Lines'],big.mark=" ")` lines. The blog data set has a total of `r format(blogs.data['Chars'],big.mark=" ")` characters, `r format(blogs.data2['Words'],big.mark=" ")` words, and `r format(blogs.data['Lines'],big.mark=" ")` lines. In total, the complete data set has `r format(total.chars,big.mark=" ")` characters, `r format(total.words,big.mark=" ")` words, and `r format(total.lines,big.mark=" ")` lines.
+
+To reduce the memory requirements for this exploratory analysis, the data is reduced by randomly sampling 25% of each type before the combined corpus is created.
+
+```{r sample}
+set.seed(54321)
+twitter <- sample(twitter,size=length(twitter)*0.1)
+news <- sample(news,size=length(news)*0.1)
+blogs <- sample(blogs,size=length(blogs)*0.1)
+total.data <- c(twitter,news,blogs)
+```
+
+### Creating the Corpus
+
+The text is reduced to lower-case then punctuation, white space, and numbers are removed and the document is stemmed (suffixes are removed). Finally, profanity is removed. The profanity list used to clean the corpus was complied and posted to a publicly available [blog](http://urbanoalvarez.es/blog/2008/04/04/bad-words-list/
+) by Alejandro U. Alvarez.
+
+```{r Create_Corpus}
+Corpus <- VCorpus(VectorSource(total.data))
+Corpus <- tm_map(Corpus, content_transformer(tolower),lazy=TRUE)
+Corpus <- tm_map(Corpus, removePunctuation,lazy=TRUE)
+Corpus <- tm_map(Corpus, stripWhitespace,lazy=T)
+Corpus <- tm_map(Corpus, removeNumbers)
+#Corpus <- tm_map(Corpus, stemDocument)
+profanity_list <- readLines('~/Data/profanity_list/badwords.txt')
+Corpus <- tm_map(Corpus, removeWords, profanity_list, lazy=TRUE)
+```
+
+--- 
+
+## Tokenization and creating N-grams
+The data is now tokenized, meaning that it is divided into groups of consecutive words. These groups are called [N-grams](https://en.wikipedia.org/wiki/N-gram), where the 'N' refers to the number of words in the group.  Here, the NGramTokenizer function is used to create N-grams with N = 1,2, and 3 (unigrams, bigrams, and trigrams). These are simultaneously coerced into a term-document matrix for analysis.
+
+```{r Tokenize}
+options(mc.cores=1)
+GramTokenizeOne <- function(x){NGramTokenizer(x, Weka_control(min=1,max=1))}
+GramTokenizeTwo <- function(x){NGramTokenizer(x, Weka_control(min=2,max=2))}
+GramTokenizeThree <- function(x){NGramTokenizer(x, Weka_control(min=3,max=3))}
+GramTokenizeFour <- function(x){NGramTokenizer(x, Weka_control(min=4,max=4))}
+
+gram.N1 <- TermDocumentMatrix(Corpus,control=list(tokenize=GramTokenizeOne))
+sort.gram.N1 <- sort(row_sums(gram.N1),decreasing=TRUE)
+save(gram.N1, file='~/Data/UseData/N1Data.RData')
+rm(gram.N1)
+N1 <- names(sort.gram.N1)
+#rm(sort.gram.N1)
+
+gram.N2 <- TermDocumentMatrix(Corpus,control=list(tokenize=GramTokenizeTwo))
+sort.gram.N2 <- sort(row_sums(gram.N2),decreasing=TRUE)
+save(gram.N2, file='~/Data/UseData/N2Data.RData')
+rm(gram.N2)
+N2 <- names(sort.gram.N2)
+#rm(sort.gram.N2)
+
+gram.N3 <- TermDocumentMatrix(Corpus,control=list(tokenize=GramTokenizeThree))
+sort.gram.N3 <- sort(row_sums(gram.N3),decreasing=TRUE)
+save(gram.N3, file='~/Data/UseData/N3Data.RData')
+rm(gram.N3)
+N3 <- names(sort.gram.N3)
+#rm(sort.gram.N3)
+
+gram.N4 <- TermDocumentMatrix(Corpus,control=list(tokenize=GramTokenizeFour))
+sort.gram.N4 <- sort(row_sums(gram.N4),decreasing=TRUE)
+save(gram.N4, file='~/Data/UseData/N4Data.RData')
+rm(gram.N4)
+N4 <- names(sort.gram.N4)
+#rm(sort.gram.N4)
+
+rm(Corpus)
+```
+
+### Analysis of the N-grams
+The N-grams are sorted from largest to smallest, then the 50 largest are plotted for the unigram, bigram, and trigram in figures 1, 2, and 3 respectively. The sorting code is shown below, along with the code to plot figure 1.
+
+Now remove any duplicates. For example, if multiple bigrams start with 'because ...', then only keep the most frequent. Use the 500 most popular unigrams to sort through.
+
+```{r removeDuplicates}
+for(i in 1:1000){
+        print(i)
+        index <- grep(paste('^',N3[i],sep=''),N4)
+        N4 <- setdiff(N4,N4[index[2:length(index)]])
+}
+for(i in 1:1000){
+        print(i)
+        index <- grep(paste('^',N2[i],sep=''),N3)
+        N3 <- setdiff(N3,N3[index[2:length(index)]])
+}
+for(i in 1:1000){
+        print(i)
+        index <- grep(paste('^',N1[i],sep=''),N2)
+        N2 <- setdiff(N2,N2[index[2:length(index)]])
+}
+N1 <- N1[1]
+```
+
+
+```{r saveoutputs}
+save(N1,N2,N3,N4, file='~/Data/UseData/TextMiningData.RData')
+```
+
+```{r summary_plots1}
+df.N1 <- data.frame(words=names(sort.gram.N1),number=sort.gram.N1)
+df.N1 <- df.N1[1:50,]
+df.N1$words <- factor(df.N1$words,unique(df.N1$words))
+g <- ggplot(df.N1, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 1. The 50 Largest Unigrams.")
+print(g)
+```
+
+```{r summary_plots2,echo=FALSE}
+df.N2 <- data.frame(words=names(sort.gram.N2),number=sort.gram.N2)
+df.N2 <- df.N2[1:50,]
+df.N2$words <- factor(df.N2$words,unique(df.N2$words))
+g <- ggplot(df.N2, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 2. The 50 Largest Bigrams.")
+print(g)
+```
+
+```{r summary_plots3,echo=FALSE}
+df.N3 <- data.frame(words=names(sort.gram.N3),number=sort.gram.N3)
+df.N3 <- df.N3[1:50,]
+df.N3$words <- factor(df.N3$words,unique(df.N3$words))
+g <- ggplot(df.N3, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 3. The 50 Largest Trigrams.")
+print(g)
+```
+
+```{r summary_plots4}
+df.N4 <- data.frame(words=names(sort.gram.N4),number=sort.gram.N4)
+df.N4 <- df.N4[1:50,]
+df.N4$words <- factor(df.N4$words,unique(df.N4$words))
+g <- ggplot(df.N4, aes(x = words, y = number))
+g <- g + geom_bar(stat="identity")
+g <- g + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+g <- g + labs(x = "Words")
+g <- g + labs(y = "Counts")
+g <- g + labs(title = "Fig 4. The 50 Largest Quadgrams.")
+print(g)
+```
+
+
+Unsurprisingly, articles like 'the' and 'and', as well as prepositions like 'of' are common in the N-grams, as they are in everyday speech. The next stage of the project will be to create a model based on these N-grams. The unused portion of the data will be used for cross validation and testing.
